@@ -1,0 +1,23 @@
+{
+  "type": 4,
+  "comPort": "",
+  "baudRate": 0,
+  "handshake": 0,
+  "lptPort": "",
+  "ipAddress": "",
+  "portNumber": 0,
+  "driverName": "",
+  "usbId": 912,
+  "usbPrinterName": "",
+  "widthDPI": 203,
+  "heightDPI": 203,
+  "printerType": "KIOSK",
+  "thaiLines": [
+    "กมลทรรศน์",
+    "เรืองสถิตสถาพร",
+    "06/06/2025",
+    "110xxxxxxx462",
+    "Dataone Asia"
+  ]
+}
+
