@@ -13,11 +13,10 @@
   "heightDPI": 203,
   "printerType": "KIOSK",
   "thaiLines": [
-    "กมลทรรศน์",
-    "เรืองสถิตสถาพร",
-    "06/06/2025",
     "110xxxxxxx462",
+    "กมลทรรศน์ เรืองสถิตสถาพร",
     "Dataone Asia"
-  ]
+  ],
+  "registerCount": "4"
 }
 

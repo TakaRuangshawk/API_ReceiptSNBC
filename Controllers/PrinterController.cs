@@ -4,6 +4,8 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text.Json.Serialization;
+
 
 
 #if x86
@@ -13,12 +15,10 @@ using POSSDKHANDLE = System.Int64;
 #endif
 namespace API_ReceiptSNBC.Controllers
 {
-    public class PrinterController : Controller
+    [ApiController]
+    [Route("[controller]")]
+    public class PrinterController : ControllerBase
     {
-        public IActionResult Index()
-        {
-            return View();
-        }
         public static void SaveAs1BitBitmap(string text, string outputPath)
         {
             // สร้างภาพจากข้อความ
@@ -93,7 +93,10 @@ namespace API_ReceiptSNBC.Controllers
             GenericTool.SetAlignmentMode(GenericTool.PrinterHandle, 0);
 
             int nStartY = -1;
-
+            GenericTool.DownloadRAMBitmapByFile(GenericTool.PrinterHandle, Path.Combine(imgDir, "Logo_d1.bmp"), 0); 
+            GenericTool.FeedLine(GenericTool.PrinterHandle);
+            GenericTool.PrintRAMBitmap(GenericTool.PrinterHandle, 0, 23, nStartY, 0);
+            GenericTool.FeedLine(GenericTool.PrinterHandle);
             foreach (var line in lines)
             {
                 SaveAs1BitBitmap(line, bmpPath);
@@ -114,6 +117,116 @@ namespace API_ReceiptSNBC.Controllers
             GenericTool.Reset(GenericTool.PrinterHandle);
         }
 
+        public static void SaveAs1BitBitmapLeftRight(string left, string right, string outputPath, int width = 570, int height = 46, int rightStartX = 265)
+        {
+            using (Bitmap original = new Bitmap(width, height))
+            using (Graphics g = Graphics.FromImage(original))
+            {
+                g.Clear(Color.White);
+                using (Font font = new Font("Tahoma", 19))
+                {
+                    // วาดข้อความซ้าย 
+                    g.DrawString(left, font, Brushes.Black, new PointF(10, 7));
+
+                    // คำนวณขนาดข้อความขวา (เพื่อชิดขวาหรือชิดตาม rightStartX)
+                    SizeF rightSize = g.MeasureString(right, font);
+
+                    // จุดเริ่มของข้อความขวา = rightStartX (ค่าคงที่ที่คุณอยากให้เริ่ม)
+                    float rightX = rightStartX;
+                    g.DrawString(right, font, Brushes.Black, new PointF(rightX, 7));
+                }
+
+                using (Bitmap bwBmp = ConvertTo1Bpp(original))
+                {
+                    bwBmp.Save(outputPath, ImageFormat.Bmp);
+                }
+            }
+        }
+
+        public static void SaveAs1BitBitmapLargeNumber(string number, string outputPath, int width = 570, int height = 46, int fontSize = 42)
+        {
+            using (Bitmap original = new Bitmap(width, height))
+            using (Graphics g = Graphics.FromImage(original))
+            {
+                g.Clear(Color.White);
+                using (Font font = new Font("Tahoma", fontSize, FontStyle.Bold))
+                {
+                    SizeF textSize = g.MeasureString(number, font);
+                    // จัดกลาง
+                    float x = (width - textSize.Width) / 2;
+                    float y = (height - textSize.Height) / 2;
+                    g.DrawString(number, font, Brushes.Black, new PointF(x, y));
+                }
+
+                using (Bitmap bwBmp = ConvertTo1Bpp(original))
+                {
+                    bwBmp.Save(outputPath, ImageFormat.Bmp);
+                }
+            }
+        }
+
+        public static void PrintThaiLinesPair(string[] leftLabels, string[] lines,string registerCount)
+        {
+            if (lines == null || lines.Length == 0)
+                throw new ArgumentException("No lines to print.");
+
+            if (leftLabels.Length != lines.Length)
+                throw new ArgumentException("leftLabels and lines count mismatch.");
+
+            string imgDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "img");
+            Directory.CreateDirectory(imgDir);
+
+            string bmpLeftPath = Path.Combine(imgDir, "ThaiLeft.bmp");
+            string bmpRightPath = Path.Combine(imgDir, "ThaiRight.bmp");
+            string bmpPath = Path.Combine(imgDir, "ThaiLine.bmp");
+            // Printer setup
+            GenericTool.SelectPaperType(GenericTool.PrinterHandle, 0);
+            GenericTool.PrintSetMode(GenericTool.PrinterHandle, 0);
+            GenericTool.ApplicationUnit(GenericTool.PrinterHandle, 1);
+            GenericTool.SetTextFontType(GenericTool.PrinterHandle, 0);
+            GenericTool.SetAlignmentMode(GenericTool.PrinterHandle, 0);
+
+            int nStartY = -1;
+            GenericTool.DownloadRAMBitmapByFile(GenericTool.PrinterHandle, Path.Combine(imgDir, "Logo_d1.bmp"), 0);
+            GenericTool.FeedLine(GenericTool.PrinterHandle);
+            GenericTool.PrintRAMBitmap(GenericTool.PrinterHandle, 0, 23, nStartY, 0);
+            GenericTool.FeedLine(GenericTool.PrinterHandle);
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                SaveAs1BitBitmapLeftRight(leftLabels[i], lines[i], bmpPath, 570, 46, 265);
+
+                int ret = GenericTool.DownloadRAMBitmapByFile(GenericTool.PrinterHandle, bmpPath, 0);
+                if (ret != GenericTool.ERR_SUCCESS)
+                    throw new Exception($"Failed to load BMP for line: {leftLabels[i]} {lines[i]}");
+
+                ret = GenericTool.PrintRAMBitmap(GenericTool.PrinterHandle, 0, 0, nStartY, 0);
+                if (ret != GenericTool.ERR_SUCCESS)
+                    throw new Exception($"Failed to print line: {leftLabels[i]} {lines[i]}");
+
+                //GenericTool.FeedLine(GenericTool.PrinterHandle);
+            }
+            if (!string.IsNullOrEmpty(registerCount))
+            {
+                GenericTool.FeedLine(GenericTool.PrinterHandle);
+                // ปรับขนาดเท่า logo หรือที่ต้องการ
+                SaveAs1BitBitmapLargeNumber(registerCount, bmpPath, 200, 100, 72);
+
+                int ret = GenericTool.DownloadRAMBitmapByFile(GenericTool.PrinterHandle, bmpPath, 0);
+                if (ret != GenericTool.ERR_SUCCESS)
+                    throw new Exception("Failed to load BMP for register count");
+
+                ret = GenericTool.PrintRAMBitmap(GenericTool.PrinterHandle, 0, 22, nStartY, 0);
+                if (ret != GenericTool.ERR_SUCCESS)
+                    throw new Exception("Failed to print register count");
+
+                
+            }
+            // Finalize
+            GenericTool.CutPaper(GenericTool.PrinterHandle, 1, 80);
+            GenericTool.Reset(GenericTool.PrinterHandle);
+        }
+
 
         public enum PortType
         {
@@ -124,23 +237,25 @@ namespace API_ReceiptSNBC.Controllers
             USBAPI = 4,
             USBClass = 5
         }
-        public class ConnectionParams
-        {
-            public PortType Type { get; set; }
-            public string ComPort { get; set; }
-            public int BaudRate { get; set; }
-            public int Handshake { get; set; }
-            public string LptPort { get; set; }
-            public string IpAddress { get; set; }
-            public int PortNumber { get; set; }
-            public string DriverName { get; set; }
-            public int UsbId { get; set; }
-            public string UsbPrinterName { get; set; }
-            public int WidthDPI { get; set; }
-            public int HeightDPI { get; set; }
-            public string PrinterType { get; set; }
-            public string[] ThaiLines { get; set; }
-        }
+            public class ConnectionParams
+            {
+                public PortType Type { get; set; }
+                public string ComPort { get; set; }
+                public int BaudRate { get; set; }
+                public int Handshake { get; set; }
+                public string LptPort { get; set; }
+                public string IpAddress { get; set; }
+                public int PortNumber { get; set; }
+                public string DriverName { get; set; }
+                public int UsbId { get; set; }
+                public string UsbPrinterName { get; set; }
+                public int WidthDPI { get; set; }
+                public int HeightDPI { get; set; }
+                public string PrinterType { get; set; }
+                public string[] ThaiLines { get; set; }
+            [JsonPropertyName("registerCount")]
+            public string RegisterCount { get; set; }
+            }
 
         public static bool AlreadyConnected { get; private set; } = false;
         public static (bool Success, string Message) Connect(ConnectionParams param)
@@ -152,7 +267,7 @@ namespace API_ReceiptSNBC.Controllers
                     return (false, $"Close failed: {closeRet}");
                 AlreadyConnected = false;
             }
-
+            string[] leftLabels = { "หมายเลขบัตรประชาชน:", "ชื่อ-นามสกุล:", "กลุ่มลูกค้า:" };
             POSSDKHANDLE handle = GenericTool.Init(param.PrinterType);
             if (handle < 0)
                 return (false, $"Init failed. Code: {handle}");
@@ -196,7 +311,7 @@ namespace API_ReceiptSNBC.Controllers
             {
                 if (param.ThaiLines != null)
                 {
-                    PrintThaiLinesIndividually(param.ThaiLines);
+                    PrintThaiLinesPair(leftLabels,param.ThaiLines,param.RegisterCount);
                 }
                 GenericTool.ClosePort(handle);
                 AlreadyConnected = false;
